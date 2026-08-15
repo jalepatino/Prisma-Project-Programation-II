@@ -2,6 +2,31 @@
 
 ---
 
+## Fase 5 — Integracion de perfiles y configuracion persistente — 2026-08-16
+
+### Archivos modificados
+- `app/ui/views/settings_view.py` — importar/exportar perfil via `FilePicker`, persistencia de preferencias en cada cambio, restauracion en `activate()`, toasts no bloqueantes con icono + color
+- `app/ui/main_window.py` — nuevo `on_profile_changed()`: refresca el panel, publica la matriz activa en `overlay_renderer` y sincroniza la bandeja; se invoca al arrancar si hay un perfil guardado
+- `main.py` — aplica `launch_on_startup` (registro de Windows `HKCU\...\Run`) y `start_minimized` (oculta la ventana) al arrancar, leidos de la configuracion persistida
+
+### Dependencias agregadas
+- ninguna nueva (`winreg` es modulo estandar de Windows); `requirements.txt` regenerado con `pip freeze`
+
+### Decisiones arquitectonicas
+- El perfil activo del escritorio se persiste bajo un identificador fijo (`ACTIVE_PROFILE_ID = "active"`) en vez de un UUID por importacion, ya que el spec modela un unico perfil activo a la vez (Seccion 6.1); cada importacion sobrescribe el mismo archivo en vez de acumular perfiles huerfanos en disco
+- `SettingsView` no recibe una referencia directa a `MainWindow`; en su lugar expone `set_profile_changed_callback()`, y `MainWindow._create_views()` la vincula a `self.on_profile_changed` tras crear las vistas — mismo patron de inyeccion por metodo que `set_tray_icon()` desde la Fase 2, sin tocar la firma comun de `BaseView.__init__`
+- La exportacion usa `dataclasses.asdict(profile)` directamente: como `ColorVisionProfile` ya es un espejo exacto del esquema de la Seccion 6.1 (decision de la Fase 1), no hace falta un mapeo manual de campos
+- `_handle_preference_change` hace lectura-fusion-escritura (`load_config()` + `update()` + `save_config()`) en vez de guardar solo `get_preferences()` directamente: guardar unicamente esas 3 claves habria sobrescrito `config.json` completo, perdiendo `active_profile_id`, `latitude`/`longitude` y `correction_active` en cada cambio de un switch. Verificado con una prueba que confirma que esas claves sobreviven
+
+### Bugs de API reales atrapados por pruebas propias (no por el smoke test del prompt)
+- `ft.Dropdown` no acepta `on_change` en Flet 0.86.5 — el evento correcto es `on_select`. Sin la prueba de instanciacion completa de `SettingsView`, esto habria fallado recien en tiempo de ejecucion real
+
+### Limitaciones conocidas
+- Activar "Iniciar con el sistema" desde Ajustes escribe la preferencia en `config.json` de inmediato, pero el registro de Windows solo se sincroniza la proxima vez que arranca la aplicacion (`apply_startup_preference` corre en `main.py`, no en el manejador del switch) — coherente con el alcance de la Fase 5 (`main.py`: "Load config on startup and apply"), documentado por transparencia
+- Los dialogos de `FilePicker` (importar/exportar) requieren una ventana Flet real; no son verificables de extremo a extremo en un entorno headless. Se probo toda la logica circundante (validacion, persistencia, callback, toasts) sustituyendo `pick_files`/`save_file` por dobles de prueba
+
+---
+
 ## Fase 4 — Filtro de luz azul y programador de ocaso — 2026-08-16
 
 ### Archivos creados

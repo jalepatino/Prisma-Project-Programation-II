@@ -81,7 +81,10 @@ class MainWindow(ft.Container):
         self._tray_icon: Optional[Any] = None
         self.bgcolor = self.palette.bg_primary
         self.content = self._build_shell()
-        self._refresh_dashboard_summary()
+        if self._active_profile is not None:
+            self.on_profile_changed(self._active_profile)
+        else:
+            self._refresh_dashboard_summary()
 
     # Cambia la vista visible y sincroniza barra lateral y cabecera
     def navigate_to(self, route: str) -> None:
@@ -119,6 +122,16 @@ class MainWindow(ft.Container):
     # Vincula el icono de bandeja creado en main.py para mantenerlo sincronizado
     def set_tray_icon(self, icon: Any) -> None:
         self._tray_icon = icon
+
+    # Aplica un perfil nuevo o recien importado: panel, matriz activa y menu de bandeja
+    def on_profile_changed(self, profile: ColorVisionProfile) -> None:
+        self._active_profile = profile
+        self._refresh_dashboard_summary()
+        overlay_renderer.update_active_matrix(build_matrix_for_profile(profile, "correct"))
+        if self._tray_icon is not None:
+            tray_service.update_tray_menu(
+                self._tray_icon, self.correction_active, _describe_deficiency(self._active_profile)
+            )
 
     # Atajos globales de navegacion, colapso y tema
     def handle_keyboard_event(self, event: ft.KeyboardEvent) -> None:
@@ -195,6 +208,7 @@ class MainWindow(ft.Container):
         self._views = {}
         for view_class in VIEW_REGISTRY:
             self._views[view_class.route] = view_class(self.palette)
+        self._views[AppRoute.SETTINGS].set_profile_changed_callback(self.on_profile_changed)
 
     # Localiza el descriptor de navegacion asociado a una ruta
     def _find_destination(self, route: str) -> Optional[NavigationDestination]:
