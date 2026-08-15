@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "reference_source": "Machado, Oliveira & Fernandes (2009), 'A Physiologically-based Model for Simulation of Color Vision Deficiency', full-dichromacy RGB matrices",
+  "correction_method": "Linear daltonization: correct = identity + error_matrix (identity - simulate). error_matrix redistributes the channel difference lost to the deficiency axis into the channels the profile can still perceive (blue for red-green axis, red/green for blue-yellow axis), following the Fidaner-Walraven-Grzywacz error-modification approach used by the daltonize algorithm.",
+  "notes": "deuteranomaly and deuteranopia share the same red-green axis matrix; tritanomaly and tritanopia share the same blue-yellow axis matrix. Partial severity (anomaly) versus complete dichromacy is expressed only through the severity value (0.0-1.0) interpolated against the identity matrix by interpolate_severity, not through separate coefficient sets.",
+  "deficiency_matrices": {
+    "deuteranomaly": {
+      "simulate": [
+        [0.367322, 0.860646, -0.227968],
+        [0.280085, 0.672501, 0.047413],
+        [-0.011820, 0.042940, 0.968881]
+      ],
+      "correct": [
+        [1.0, 0.0, 0.0],
+        [0.16279, 0.725047, 0.112165],
+        [0.454695, -0.645392, 1.190697]
+      ]
+    },
+    "deuteranopia": {
+      "simulate": [
+        [0.367322, 0.860646, -0.227968],
+        [0.280085, 0.672501, 0.047413],
+        [-0.011820, 0.042940, 0.968881]
+      ],
+      "correct": [
+        [1.0, 0.0, 0.0],
+        [0.16279, 0.725047, 0.112165],
+        [0.454695, -0.645392, 1.190697]
+      ]
+    },
+    "tritanomaly": {
+      "simulate": [
+        [1.255528, -0.076749, -0.178779],
+        [-0.078411, 0.930809, 0.147602],
+        [0.004733, 0.691367, 0.303900]
+      ],
+      "correct": [
+        [0.741159, -0.407208, 0.666049],
+        [0.075098, 0.585234, 0.339668],
+        [0.0, 0.0, 1.0]
+      ]
+    },
+    "tritanopia": {
+      "simulate": [
+        [1.255528, -0.076749, -0.178779],
+        [-0.078411, 0.930809, 0.147602],
+        [0.004733, 0.691367, 0.303900]
+      ],
+      "correct": [
+        [0.741159, -0.407208, 0.666049],
+        [0.075098, 0.585234, 0.339668],
+        [0.0, 0.0, 1.0]
+      ]
+    }
+  }
+}

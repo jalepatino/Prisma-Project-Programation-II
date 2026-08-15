@@ -1,0 +1,22 @@
+# Entornos virtuales de Python
+fletenv/
+.venv/
+venv/
+
+# Artefactos de compilacion de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Empaquetado / distribucion
+build/
+dist/
+*.egg-info/
+
+# Configuracion local de IDE
+.vscode/
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

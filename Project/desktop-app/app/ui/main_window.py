@@ -1,16 +1,25 @@
 # Shell raiz de la aplicacion: barra lateral, cabecera y area de contenido enrutada
 # Unico punto que conoce el mapa de rutas y coordina los cambios de tema
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import flet as ft
+import numpy as np
 
+from app.config.app_config import load_config
 from app.config.constants import (
+    AppRoute,
     DEFAULT_ROUTE,
     NAVIGATION_DESTINATIONS,
     NavigationDestination,
     RESPONSIVE_COLLAPSE_WIDTH,
 )
+from app.core import overlay_renderer
+from app.core.color_matrix_engine import build_matrix_for_profile
+from app.core.color_temperature import calculate_kelvin_curve
+from app.profiles.profile_model import CURRENT_SCHEMA_VERSION, ColorVisionProfile
+from app.profiles.profile_service import get_profile
+from app.tray import tray_service
 from app.ui.components.app_header import AppHeader
 from app.ui.components.navigation_bar import NavigationSidebar
 from app.ui.theme.design_tokens import (
@@ -21,8 +30,17 @@ from app.ui.theme.design_tokens import (
 )
 from app.ui.theme.theme_builder import build_theme
 from app.ui.views.base_view import BaseView
-from app.ui.views.dashboard_view import DashboardView
-from app.ui.views.filters_view import FiltersView
+from app.ui.views.dashboard_view import (
+    DEFAULT_DEFICIENCY_LABEL,
+    DEFAULT_SEVERITY_LABEL,
+    DashboardView,
+)
+from app.ui.views.filters_view import (
+    BRIGHTNESS_DEFAULT,
+    CONTRAST_DEFAULT,
+    KELVIN_DEFAULT,
+    FiltersView,
+)
 from app.ui.views.picker_view import PickerView
 from app.ui.views.settings_view import SettingsView
 from app.utils.control_sync import request_update
@@ -30,9 +48,27 @@ from app.utils.control_sync import request_update
 # Mapa de rutas a clases de vista; ampliar aqui al agregar nuevas pantallas
 VIEW_REGISTRY = (DashboardView, PickerView, FiltersView, SettingsView)
 
+# Traduccion de los tipos tecnicos de deficiencia a etiquetas legibles en espanol
+_DEFICIENCY_LABELS = {
+    "deuteranomaly": "Deuteranomalia",
+    "deuteranopia": "Deuteranopia",
+    "tritanomaly": "Tritanomalia",
+    "tritanopia": "Tritanopia",
+    "normal": "Vision normal",
+}
+
+# Perfil de respaldo cuando no hay un perfil activo configurado (sin correccion cromatica)
+_DEFAULT_PROFILE = ColorVisionProfile(
+    schema_version=CURRENT_SCHEMA_VERSION,
+    deficiency_type="normal",
+    severity=0.0,
+    source="manual",
+    generated_at="1970-01-01T00:00:00Z",
+)
+
 
 class MainWindow(ft.Container):
-    # Construye el layout completo y deja la ruta por defecto activa
+    # Construye el layout completo, carga el perfil activo y deja la ruta por defecto activa
     def __init__(self, page: ft.Page) -> None:
         super().__init__(expand=True)
         self.host_page = page
@@ -42,8 +78,11 @@ class MainWindow(ft.Container):
         self.correction_active = False
         self._auto_collapsed = False
         self._views: Dict[str, BaseView] = {}
+        self._active_profile = _load_active_profile()
+        self._tray_icon: Optional[Any] = None
         self.bgcolor = self.palette.bg_primary
         self.content = self._build_shell()
+        self._refresh_dashboard_summary()
 
     # Cambia la vista visible y sincroniza barra lateral y cabecera
     def navigate_to(self, route: str) -> None:
@@ -69,6 +108,7 @@ class MainWindow(ft.Container):
         self.host_page.bgcolor = self.palette.bg_primary
         self.bgcolor = self.palette.bg_primary
         self.content = self._build_shell()
+        self._refresh_dashboard_summary()
         self.host_page.update()
 
     # Alterna el ancho de la barra lateral entre expandido y compacto
@@ -76,6 +116,10 @@ class MainWindow(ft.Container):
         self.sidebar_collapsed = not self.sidebar_collapsed
         self._auto_collapsed = False
         self._sidebar.set_collapsed(self.sidebar_collapsed)
+
+    # Vincula el icono de bandeja creado en main.py para mantenerlo sincronizado
+    def set_tray_icon(self, icon: Any) -> None:
+        self._tray_icon = icon
 
     # Atajos globales de navegacion, colapso y tema
     def handle_keyboard_event(self, event: ft.KeyboardEvent) -> None:
@@ -173,6 +217,72 @@ class MainWindow(ft.Container):
             if 0 <= index < len(NAVIGATION_DESTINATIONS):
                 self.navigate_to(NAVIGATION_DESTINATIONS[index].route)
 
-    # Guarda el estado de correccion emitido por la cabecera
+    # Arranca o detiene el bucle de superposicion y sincroniza el menu de bandeja
     def _handle_correction_toggle(self, is_active: bool) -> None:
         self.correction_active = is_active
+        if is_active:
+            overlay_renderer.start_render_loop(self._build_active_correction_matrix())
+        else:
+            overlay_renderer.stop_render_loop()
+        if self._tray_icon is not None:
+            tray_service.update_tray_menu(
+                self._tray_icon, self.correction_active, _describe_deficiency(self._active_profile)
+            )
+
+    # Combina la matriz de correccion del perfil activo con la ganancia de temperatura actual
+    def _build_active_correction_matrix(self) -> np.ndarray:
+        profile = self._active_profile if self._active_profile is not None else _DEFAULT_PROFILE
+        correction_matrix = build_matrix_for_profile(profile, "correct")
+        filter_state = self._views[AppRoute.FILTERS].get_filter_state()
+        red_gain, green_gain, blue_gain = calculate_kelvin_curve(filter_state["kelvin"])
+        temperature_matrix = np.diag([red_gain, green_gain, blue_gain])
+        return temperature_matrix @ correction_matrix
+
+    # Recalcula las etiquetas del panel a partir del perfil activo y el estado de filtros
+    def _refresh_dashboard_summary(self) -> None:
+        dashboard = self._views.get(AppRoute.DASHBOARD)
+        if dashboard is None:
+            return
+        dashboard.update_summary(
+            _describe_deficiency(self._active_profile),
+            _describe_severity(self._active_profile),
+            _describe_active_filters(self._views[AppRoute.FILTERS]),
+        )
+
+
+# Carga el perfil activo declarado en la configuracion local; None si no hay ninguno
+def _load_active_profile() -> Optional[ColorVisionProfile]:
+    config = load_config()
+    profile_id = config.get("active_profile_id")
+    if not profile_id:
+        return None
+    return get_profile(profile_id)
+
+
+# Etiqueta de deficiencia legible en espanol a partir del tipo tecnico del perfil
+def _describe_deficiency(profile: Optional[ColorVisionProfile]) -> str:
+    if profile is None:
+        return DEFAULT_DEFICIENCY_LABEL
+    return _DEFICIENCY_LABELS.get(profile.deficiency_type, profile.deficiency_type)
+
+
+# Etiqueta de severidad como porcentaje legible
+def _describe_severity(profile: Optional[ColorVisionProfile]) -> str:
+    if profile is None:
+        return DEFAULT_SEVERITY_LABEL
+    return str(round(profile.severity * 100)) + "%"
+
+
+# Cuenta los filtros que se apartan de su valor neutro para la tarjeta de resumen
+def _describe_active_filters(filters_view: FiltersView) -> str:
+    state = filters_view.get_filter_state()
+    active_count = 0
+    if state["kelvin"] != KELVIN_DEFAULT:
+        active_count += 1
+    if state["brightness_ceiling"] != BRIGHTNESS_DEFAULT:
+        active_count += 1
+    if state["contrast"] != CONTRAST_DEFAULT:
+        active_count += 1
+    if state["schedule_enabled"]:
+        active_count += 1
+    return str(active_count) + " activos"

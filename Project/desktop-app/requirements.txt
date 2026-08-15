@@ -1,0 +1,7 @@
+flet==0.86.5
+flet-desktop==0.86.5
+numpy==2.5.2
+opencv-python==5.0.0.93
+mss==10.2.0
+pystray==0.19.5
+pillow==12.3.0

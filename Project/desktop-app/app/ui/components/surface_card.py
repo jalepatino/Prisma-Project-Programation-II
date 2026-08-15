@@ -76,8 +76,8 @@ class SurfaceCard(ft.Container):
         return ft.Column(controls=blocks, spacing=Spacing.SPACE_2, tight=True)
 
     # Elevacion sutil en hover: sombra y desplazamiento vertical minimo
-    def _handle_hover(self, event: ft.HoverEvent) -> None:
-        is_hovered = event.data == "true"
+    def _handle_hover(self, event: ft.ControlEvent) -> None:
+        is_hovered = bool(event.data)
         self.offset = ft.Offset(0, -0.006) if is_hovered else ft.Offset(0, 0)
         self.border = ft.Border.all(
             1, self.palette.accent if is_hovered else self.palette.border
