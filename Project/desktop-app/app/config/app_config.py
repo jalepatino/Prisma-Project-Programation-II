@@ -16,6 +16,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "startup_target": "Ventana principal",
     "active_profile_id": None,
     "correction_active": False,
+    "latitude": None,
+    "longitude": None,
 }
 
 

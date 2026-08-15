@@ -16,7 +16,6 @@ from app.config.constants import (
 )
 from app.core import overlay_renderer
 from app.core.color_matrix_engine import build_matrix_for_profile
-from app.core.color_temperature import calculate_kelvin_curve
 from app.profiles.profile_model import CURRENT_SCHEMA_VERSION, ColorVisionProfile
 from app.profiles.profile_service import get_profile
 from app.tray import tray_service
@@ -222,6 +221,7 @@ class MainWindow(ft.Container):
         self.correction_active = is_active
         if is_active:
             overlay_renderer.start_render_loop(self._build_active_correction_matrix())
+            overlay_renderer.update_filter_state(self._views[AppRoute.FILTERS].get_filter_state())
         else:
             overlay_renderer.stop_render_loop()
         if self._tray_icon is not None:
@@ -229,14 +229,11 @@ class MainWindow(ft.Container):
                 self._tray_icon, self.correction_active, _describe_deficiency(self._active_profile)
             )
 
-    # Combina la matriz de correccion del perfil activo con la ganancia de temperatura actual
+    # Matriz de correccion CVD del perfil activo; la capa de temperatura/brillo/contraste
+    # se apila por separado en el hilo de render via overlay_renderer.update_filter_state
     def _build_active_correction_matrix(self) -> np.ndarray:
         profile = self._active_profile if self._active_profile is not None else _DEFAULT_PROFILE
-        correction_matrix = build_matrix_for_profile(profile, "correct")
-        filter_state = self._views[AppRoute.FILTERS].get_filter_state()
-        red_gain, green_gain, blue_gain = calculate_kelvin_curve(filter_state["kelvin"])
-        temperature_matrix = np.diag([red_gain, green_gain, blue_gain])
-        return temperature_matrix @ correction_matrix
+        return build_matrix_for_profile(profile, "correct")
 
     # Recalcula las etiquetas del panel a partir del perfil activo y el estado de filtros
     def _refresh_dashboard_summary(self) -> None:

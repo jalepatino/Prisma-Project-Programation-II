@@ -1,9 +1,14 @@
 # Vista de filtros: capa independiente de temperatura, brillo y contraste
-# Los valores se envian a color_temperature.py cuando exista el bucle de render
+# Los controles publican su estado en overlay_renderer; la programacion corre en un hilo
+# dedicado de filter_scheduler, por lo que sus callbacks se agendan con page.run_task
+
+from datetime import datetime
 
 import flet as ft
 
 from app.config.constants import AppRoute
+from app.core import filter_scheduler, overlay_renderer
+from app.core.color_matrix_engine import IDENTITY_MATRIX
 from app.ui.components.surface_card import SurfaceCard
 from app.ui.theme.design_tokens import (
     FontSize,
@@ -107,9 +112,16 @@ class FiltersView(BaseView):
         self._schedule_switch = ft.Switch(
             value=False,
             active_color=self.palette.accent,
+            on_change=self._handle_schedule_change,
             tooltip="Activar los filtros automaticamente al anochecer",
         )
-        body = ft.Row(
+        self._schedule_status_label = ft.Text(
+            "",
+            size=FontSize.CAPTION,
+            weight=FontWeight.MEDIUM,
+            color=self.palette.text_secondary,
+        )
+        toggle_row = ft.Row(
             controls=[
                 ft.Column(
                     controls=[
@@ -133,6 +145,11 @@ class FiltersView(BaseView):
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=Spacing.SPACE_4,
+        )
+        body = ft.Column(
+            controls=[toggle_row, self._schedule_status_label],
+            spacing=Spacing.SPACE_2,
+            tight=True,
         )
         return SurfaceCard(
             palette=self.palette,
@@ -195,17 +212,73 @@ class FiltersView(BaseView):
             tight=True,
         )
 
-    # Sincroniza la etiqueta de temperatura con la posicion del control
+    # Sincroniza la etiqueta de temperatura y publica el nuevo estado en la superposicion
     def _handle_kelvin_change(self, event: ft.ControlEvent) -> None:
         self._kelvin_value.value = str(int(self._kelvin_slider.value)) + " K"
         request_update(self._kelvin_value)
+        overlay_renderer.update_filter_state(self.get_filter_state())
 
-    # Sincroniza la etiqueta de brillo con la posicion del control
+    # Sincroniza la etiqueta de brillo y publica el nuevo estado en la superposicion
     def _handle_brightness_change(self, event: ft.ControlEvent) -> None:
         self._brightness_value.value = str(int(self._brightness_slider.value)) + " %"
         request_update(self._brightness_value)
+        overlay_renderer.update_filter_state(self.get_filter_state())
 
-    # Sincroniza la etiqueta de contraste con la posicion del control
+    # Sincroniza la etiqueta de contraste y publica el nuevo estado en la superposicion
     def _handle_contrast_change(self, event: ft.ControlEvent) -> None:
         self._contrast_value.value = str(int(self._contrast_slider.value)) + " %"
         request_update(self._contrast_value)
+        overlay_renderer.update_filter_state(self.get_filter_state())
+
+    # Arranca o detiene el programador segun el nuevo estado del interruptor
+    def _handle_schedule_change(self, event: ft.ControlEvent) -> None:
+        if self._schedule_switch.value:
+            self._schedule_status_label.value = "Calculando horario..."
+            request_update(self._schedule_status_label)
+            filter_scheduler.start_schedule_loop(
+                self._handle_schedule_activate, self._handle_schedule_deactivate
+            )
+        else:
+            filter_scheduler.stop_schedule_loop()
+            self._schedule_status_label.value = ""
+            request_update(self._schedule_status_label)
+
+    # Notificado por el programador (hilo dedicado) cuando corresponde activar los filtros
+    def _handle_schedule_activate(self) -> None:
+        self.page.run_task(self._apply_schedule_active_state)
+
+    # Notificado por el programador (hilo dedicado) cuando corresponde apagar los filtros
+    def _handle_schedule_deactivate(self) -> None:
+        self.page.run_task(self._apply_schedule_waiting_state)
+
+    # Corrutina agendada en el hilo de la pagina: enciende la capa de filtros y actualiza el estado
+    async def _apply_schedule_active_state(self) -> None:
+        if not overlay_renderer.is_render_loop_running():
+            overlay_renderer.start_render_loop(IDENTITY_MATRIX)
+        overlay_renderer.update_filter_state(self.get_filter_state())
+        self._schedule_status_label.value = "Activo - filtros encendidos"
+        request_update(self._schedule_status_label)
+
+    # Corrutina agendada en el hilo de la pagina: repone valores neutros y muestra la proxima hora
+    async def _apply_schedule_waiting_state(self) -> None:
+        overlay_renderer.update_filter_state(self._neutral_filter_state())
+        self._schedule_status_label.value = "En espera - proxima activacion " + (
+            self._describe_next_activation()
+        )
+        request_update(self._schedule_status_label)
+
+    # Estado de filtros neutro (sin efecto visible) usado al desactivar la programacion
+    def _neutral_filter_state(self) -> dict:
+        return {
+            "kelvin": KELVIN_DEFAULT,
+            "brightness_ceiling": BRIGHTNESS_DEFAULT,
+            "contrast": CONTRAST_DEFAULT,
+            "schedule_enabled": bool(self._schedule_switch.value),
+        }
+
+    # Calcula la hora local del proximo ocaso a partir de las coordenadas configuradas
+    def _describe_next_activation(self) -> str:
+        latitude, longitude = filter_scheduler.get_local_coordinates()
+        today = datetime.now().date()
+        _, sunset = filter_scheduler.get_sunrise_sunset(latitude, longitude, today)
+        return sunset.strftime("%H:%M")

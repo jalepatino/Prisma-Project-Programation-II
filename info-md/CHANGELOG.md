@@ -2,6 +2,34 @@
 
 ---
 
+## Fase 4 — Filtro de luz azul y programador de ocaso — 2026-08-16
+
+### Archivos creados
+- `app/core/filter_scheduler.py` — calculo de amanecer/atardecer (algoritmo solar NOAA) y bucle de programacion en hilo dedicado
+- `app/utils/logger.py` — configuracion centralizada de logging (previsto en la Seccion 4.3 del spec, usado por primera vez en esta fase)
+
+### Archivos modificados
+- `app/core/overlay_renderer.py` — nueva cola de estado de filtros, `update_filter_state()`, `is_render_loop_running()`; la capa de temperatura/brillo/contraste se aplica DESPUES de la matriz CVD
+- `app/ui/views/filters_view.py` — los tres sliders publican su estado en `overlay_renderer`; el interruptor de programacion arranca/detiene `filter_scheduler`; nueva etiqueta de estado ("Activo..."/"En espera...")
+- `app/ui/main_window.py` — se elimino el mezclado de temperatura en la matriz de correccion (ahora redundante con la nueva capa de filtros de la Fase 4); `_handle_correction_toggle` publica el estado de filtros por separado
+- `app/config/app_config.py` — se agregaron las claves `latitude`/`longitude` al esquema de configuracion, consumidas por `filter_scheduler.get_local_coordinates()`
+
+### Dependencias agregadas
+- ninguna nueva (numpy y opencv-python ya instalados); `requirements.txt` regenerado con `pip freeze` para fijar el entorno completo
+
+### Decisiones arquitectonicas
+- La hora "local" del amanecer/atardecer se aproxima con el desfase UTC actual del sistema operativo (`datetime.now().astimezone()`), no con una base de datos de husos horarios por coordenada, ya que esta fase no agrega dependencias nuevas
+- `filter_scheduler` usa `threading.Event.wait(60)` en vez de `time.sleep(60)`, para que `stop_schedule_loop()` responda de inmediato en vez de esperar hasta el proximo minuto
+- Al activar el filtro por programacion, si el hilo de superposicion no esta corriendo (porque la correccion CVD manual esta apagada), se arranca igualmente con matriz identidad — el filtro de luz azul es independiente de la correccion CVD, segun la Seccion 4.2.3 del spec
+- Al desactivar por programacion NO se detiene el hilo de superposicion (podria estar sosteniendo una correccion CVD activa por separado); en su lugar se publica un estado de filtro neutro (sin efecto visible)
+- Correccion de un doble conteo: la Fase 1 mezclaba la ganancia de temperatura directamente en la matriz de correccion CVD como parche temporal; ahora que existe la capa de filtros apilable real de la Fase 4, ese mezclado se elimino de `main_window.py` para evitar aplicar la temperatura dos veces
+
+### Limitaciones conocidas
+- En latitudes cercanas al circulo polar durante el sol de medianoche (dia de 24 horas), `get_sunrise_sunset()` no puede representar "nunca se pone el sol" como un par `(hora, hora)` dentro de un mismo dia calendario; el amanecer y el ocaso calculados colapsan al mismo valor. Verificado como limitacion inherente del tipo de retorno exigido por el spec, no como error de la formula solar (validado contra Madrid: amanecer/atardecer del solsticio de verano coinciden con valores publicados reales dentro de 1 minuto de precision)
+- El programador no se detiene automaticamente al cerrar la aplicacion desde la bandeja (`tray_menu_actions.handle_exit` no fue modificado en esta fase); al ser un hilo daemon, se termina igualmente con el proceso, sin bloquear el cierre
+
+---
+
 ## Fase 3 — Selector de color y lupa en vivo — 2026-08-15
 
 ### Archivos creados
