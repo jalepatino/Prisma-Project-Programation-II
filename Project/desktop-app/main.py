@@ -28,7 +28,7 @@ STARTUP_REGISTRY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
 # Prepara la pagina y la ventana nativa antes de montar cualquier control
-def initialize_page(page: ft.Page) -> None:
+async def initialize_page(page: ft.Page) -> None:
     palette = get_palette(ft.ThemeMode.LIGHT)
     page.title = APP_NAME
     page.theme_mode = ft.ThemeMode.LIGHT
@@ -41,7 +41,7 @@ def initialize_page(page: ft.Page) -> None:
     page.window.min_width = WINDOW_MIN_WIDTH
     page.window.min_height = WINDOW_MIN_HEIGHT
     page.window.prevent_close = True
-    page.window.center()
+    await page.window.center()
 
 
 # Monta el shell principal y conecta los manejadores globales de la pagina
@@ -94,9 +94,9 @@ def apply_startup_preference(launch_on_startup: bool) -> None:
 
 
 # Objetivo invocado por Flet al crear una sesion de la aplicacion
-def run_application(page: ft.Page) -> None:
+async def run_application(page: ft.Page) -> None:
     config = load_config()
-    initialize_page(page)
+    await initialize_page(page)
     main_window = build_application(page)
     start_tray_service(page, main_window)
     apply_startup_preference(bool(config.get("launch_on_startup", False)))

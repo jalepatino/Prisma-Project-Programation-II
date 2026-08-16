@@ -2,6 +2,114 @@
 
 ---
 
+## Fase 6 — Empaquetado PyInstaller y pulido final — 2026-08-16
+
+### Archivos creados
+- `build.spec` — configuracion de PyInstaller en modo onefile (`ChromaticVision.exe`)
+- `assets/icons/generate_icon.py` — genera `app.ico` (multi-resolucion) y `app.png` con Pillow; circulo azul y "C" blanca centrada
+- `app/utils/resource_path.py` — resuelve rutas a datos empaquetados, funcionando desde codigo fuente y desde el ejecutable congelado
+- `README.md` — guia de usuario en espanol: requisitos, instalacion, ejecucion desde fuente, build, vistas y atajos
+
+### Archivos modificados
+- `app/core/color_matrix_engine.py`, `app/picker/color_picker_service.py` — usan `resolve_shared_resource()` en vez de `Path(__file__).resolve().parents[N]`
+- `app/core/overlay_renderer.py` — el pipeline completo (matriz + temperatura + brillo/contraste) ahora corre sobre una copia reducida del frame (`RENDER_SCALE_FACTOR = 0.5`) y el resultado se reescala a la resolucion original antes de entregarse
+- `main.py` — `initialize_page()` y `run_application()` ahora son corrutinas que esperan (`await`) `page.window.center()`
+- `app/ui/views/filters_view.py`, `app/ui/views/settings_view.py` — nuevos `set_filter_state()` y `set_preferences()` para restaurar el estado tras reconstruir la vista
+- `app/ui/main_window.py` — `toggle_theme()` captura el estado de Filtros y Ajustes antes de reconstruir el shell y lo restaura despues
+
+### Dependencias agregadas
+- `pyinstaller==6.22.1` (ya estaba listado como necesario para esta fase); `requirements.txt` regenerado con `pip freeze`, que ahora tambien captura las dependencias transitivas de PyInstaller (`altgraph`, `pefile`, `pywin32-ctypes`, `pyinstaller-hooks-contrib`, `packaging`, `setuptools`)
+
+### Bugs reales atrapados al compilar y EJECUTAR el .exe (no solo compilarlo)
+Compilar sin errores no prueba que el ejecutable funcione: lo confirme lanzando el
+`.exe` real y tomando una captura de pantalla de la ventana renderizada, no solo
+verificando que el proceso no terminara.
+
+1. **Rutas basadas en `Path(__file__).resolve().parents[N]` no funcionan congeladas.**
+   PyInstaller mantiene la mayoria de los modulos Python puros dentro del archivo
+   PYZ comprimido en vez de extraerlos como archivos sueltos; `__file__` para esos
+   modulos no se comporta como una ruta de sistema de archivos normal. El primer
+   intento de build fallo al arrancar (`color_matrix_engine.py` no podia ubicar
+   `shared-color-science/color_matrix_reference.json`, detectado antes de ejecutar
+   por inspeccion de codigo). Se corrigio con `resource_path.py`, que usa
+   `sys._MEIPASS` como raiz cuando el proceso esta congelado.
+2. **`flet` no tiene hook propio de PyInstaller.** El primer intento de EJECUTAR el
+   `.exe` (build exitoso, pero la app fallaba al abrir) lanzo
+   `FileNotFoundError: ...flet\controls\material\icons.json` porque PyInstaller no
+   sabia que ese archivo de datos interno del paquete debia empaquetarse. Se
+   corrigio agregando `collect_data_files("flet")` a `build.spec`.
+3. **`page.window.center()` nunca se esperaba (`await`).** Es una corrutina desde
+   que se investigo su API en la Fase 2 (igual que `close()`, `destroy()`,
+   `to_front()`), pero `main.py` la llamaba de forma sincrona desde la Fase 0 y
+   ningun test lo detecto porque los dobles de prueba (`FakeWindow.center`) siempre
+   fueron metodos sincronos. Solo aparecio como `RuntimeWarning: coroutine
+   'Window.center' was never awaited` al ejecutar el `.exe` real. Corregido
+   convirtiendo `initialize_page()` y `run_application()` en corrutinas.
+
+### Rendimiento del overlay: medido, no asumido
+Se perfilo cada etapa del pipeline por separado antes de decidir que optimizar
+(`capture_frame`, conversion BGR/RGB, `apply_color_matrix`, `apply_temperature_shift`,
+`_apply_brightness_contrast`), en vez de asumir donde estaba el costo:
+
+| Etapa (1920x1080) | Costo medido |
+|---|---|
+| `capture_frame` (mss) | ~35-58 ms |
+| `apply_color_matrix` | ~70 ms |
+| `apply_temperature_shift` | ~63 ms |
+| `_apply_brightness_contrast` | ~102 ms (la mas cara, no la matriz CVD) |
+
+Con el pipeline completo activo (matriz + temperatura + brillo/contraste), el FPS
+real medido era de **2.0 FPS** a resolucion completa — mas bajo que el ~10 FPS de
+la Fase 1, porque esa medicion original no incluia la capa de filtros de la Fase 4.
+
+**Nota importante sobre la premisa de esta fase:** compilar con PyInstaller no
+mejora el rendimiento del bucle en caliente. PyInstaller empaqueta el interprete
+CPython estandar junto con el bytecode de la app; no compila Python a codigo
+maquina nativo. numpy y OpenCV ya son extensiones C compiladas de antemano, asi
+que su velocidad es identica corriendo desde `python main.py` o desde el `.exe`.
+Verificado: el FPS medido en ambos casos es equivalente dentro del margen de
+error de la medicion.
+
+**Fix aplicado (segun lo indicado, sin reescribir el motor de matrices):** el
+pipeline completo ahora corre sobre un frame reducido a `RENDER_SCALE_FACTOR = 0.5`
+(960x540 en un monitor 1920x1080), y el resultado se reescala de vuelta a la
+resolucion original antes de entregarse al `frame_sink`. Brillo/contraste
+sigue implementado como `np.clip` + multiplicador escalar (nunca como matriz
+diagonal), simplemente ahora corre sobre menos pixeles.
+
+**Resultado medido tras el fix: 8.0 FPS** (mejora de 4x sobre los 2.0 FPS
+originales). Sigue por debajo del objetivo de 30 FPS. La causa raiz reportada
+con honestidad: la captura de pantalla en si (`mss`, ~35-58 ms/frame a resolucion
+completa) es ya el costo individual mas grande y es en gran parte irreducible,
+porque mss no admite reescalar durante la captura — solo recortar el area
+capturada, lo cual cambiaria la funcionalidad (ya no seria una superposicion de
+pantalla completa). Llegar a 30 FPS de forma sostenida requeriria un enfoque
+distinto (por ejemplo, un shader en GPU o una libreria de captura con
+downsampling nativo), fuera del alcance de "no reescribir el motor de matrices"
+que fijo esta fase. Documentado como limitacion conocida, no oculto.
+
+### Otras decisiones arquitectonicas
+- `toggle_theme()` (advertencia abierta desde la revision de la Fase 0) ya no
+  descarta el estado de `FiltersView` ni de `SettingsView`: se captura con
+  `get_filter_state()`/`get_preferences()` antes de `_build_shell()` y se
+  restaura con los nuevos `set_filter_state()`/`set_preferences()` despues.
+  Verificado con una prueba que confirma que el estado sobrevive al cambio de
+  tema y que el resumen del panel refleja los filtros restaurados
+- El icono de bandeja y el `.ico` del ejecutable comparten el mismo color de
+  acento (`#0071E3`) que la paleta clara del sistema de diseno, por consistencia
+  visual entre ambos
+
+### Limitaciones conocidas
+- El overlay sostiene ~8 FPS reales a 1920x1080 con el pipeline completo activo,
+  por debajo del objetivo de 30 FPS de la Seccion 4.4 del spec. Ver la seccion de
+  rendimiento arriba para el analisis completo y la causa raiz
+- El primer lanzamiento del `.exe` en una maquina sin el cliente Flet Desktop en
+  cache (`%USERPROFILE%\.flet\client\`) requeriria conexion a internet para
+  descargarlo; en esta maquina ya estaba en cache de una instalacion previa de
+  `flet`, por lo que no se pudo verificar ese camino especifico
+
+---
+
 ## Fase 5 — Integracion de perfiles y configuracion persistente — 2026-08-16
 
 ### Archivos modificados

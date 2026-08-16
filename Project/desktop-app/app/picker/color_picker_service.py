@@ -5,19 +5,19 @@ import ctypes
 import threading
 import time
 from ctypes import wintypes
-from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
 import numpy as np
 
 from app.core.screen_capture_service import capture_region
 from app.picker.color_name_resolver import load_color_dataset, resolve_color_name
+from app.utils.resource_path import resolve_shared_resource
 
 # Callback invocado en cada muestra: (hex_value, rgb_value, color_name, frame_region)
 PickerCallback = Callable[[str, str, str, np.ndarray], None]
 
-# Ruta del dataset de nombres empaquetado junto al modulo
-COLOR_DATASET_PATH = Path(__file__).resolve().parent / "data" / "color_names.json"
+# Ruta del dataset de nombres, empaquetado junto al ejecutable o presente en el codigo fuente
+COLOR_DATASET_PATH = resolve_shared_resource("desktop-app/app/picker/data/color_names.json")
 
 # Posicion de reserva cuando el cursor no puede consultarse (limite del sistema operativo)
 FALLBACK_CURSOR_POSITION = (0, 0)

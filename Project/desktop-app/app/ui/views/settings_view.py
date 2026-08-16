@@ -57,6 +57,13 @@ class SettingsView(BaseView):
             "startup_target": self._startup_dropdown.value,
         }
 
+    # Aplica preferencias previamente capturadas (por ejemplo, antes de un cambio de tema)
+    def set_preferences(self, preferences: dict) -> None:
+        self._tray_switch.value = bool(preferences.get("start_minimized", True))
+        self._autostart_switch.value = bool(preferences.get("launch_on_startup", False))
+        self._startup_dropdown.value = preferences.get("startup_target", STARTUP_OPTIONS[0])
+        request_update(self)
+
     # Vincula el callback que MainWindow usa para reaccionar a un perfil recien importado
     def set_profile_changed_callback(self, callback: Callable[[ColorVisionProfile], None]) -> None:
         self._on_profile_changed = callback

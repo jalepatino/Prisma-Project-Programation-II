@@ -4,19 +4,19 @@
 # conversion desde el BGR nativo de OpenCV es responsabilidad del llamador
 
 import json
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 from app.profiles.profile_model import ColorVisionProfile
+from app.utils.resource_path import resolve_shared_resource
 
 # Modos de matriz soportados por build_matrix_for_profile
 MATRIX_MODES = ("simulate", "correct")
 
 # Ruta al archivo de coeficientes compartido con la plataforma web
-COLOR_MATRIX_REFERENCE_PATH = (
-    Path(__file__).resolve().parents[3] / "shared-color-science" / "color_matrix_reference.json"
+COLOR_MATRIX_REFERENCE_PATH = resolve_shared_resource(
+    "shared-color-science/color_matrix_reference.json"
 )
 
 # Matriz neutra usada como punto de partida de la interpolacion de severidad

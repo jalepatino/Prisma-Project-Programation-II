@@ -1,11 +1,18 @@
 # Bucle de renderizado de la superposicion de correccion en un hilo dedicado
 # Dos colas sincronizan matriz y estado de filtros sin bloquear el hilo de UI de Flet
 # El filtro de temperatura/brillo/contraste se apila DESPUES de la matriz de correccion CVD
+#
+# Presupuesto de rendimiento (medido, ver CHANGELOG Fase 6): a 1920x1080 el pipeline
+# completo (captura + matriz + temperatura + brillo/contraste) cuesta ~300ms/frame en
+# Python puro, muy por debajo del objetivo de 30 FPS. El calculo pesado se hace sobre
+# una copia reducida del frame (RENDER_SCALE_FACTOR) y el resultado se reescala al
+# tamano original antes de entregarlo; la captura de mss sigue siendo a resolucion
+# completa porque mss no admite reescalar durante la captura
 
 import queue
 import threading
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -15,8 +22,12 @@ from app.core.color_matrix_engine import apply_color_matrix
 from app.core.color_temperature import apply_temperature_shift
 from app.core.screen_capture_service import capture_frame
 
-# Callback invocado con cada frame ya corregido, en formato BGR
+# Callback invocado con cada frame ya corregido, en formato BGR y en resolucion completa
 FrameSink = Callable[[np.ndarray], None]
+
+# Fraccion del tamano capturado usada para el calculo de color; 0.5 en un monitor
+# 1920x1080 equivale a procesar a 960x540, reduciendo a un cuarto los pixeles por frame
+RENDER_SCALE_FACTOR = 0.5
 
 _render_thread: Optional[threading.Thread] = None
 _stop_event = threading.Event()
@@ -65,7 +76,7 @@ def is_render_loop_running() -> bool:
     return _render_thread is not None and _render_thread.is_alive()
 
 
-# Bucle interno del hilo dedicado: captura, corrige, aplica filtros y entrega cada frame
+# Bucle interno del hilo dedicado: captura, reduce, corrige, filtra y reescala cada frame
 def _run_render_loop(frame_sink: Optional[FrameSink]) -> None:
     global _active_matrix, _active_filter_state
     frame_budget_seconds = 1.0 / TARGET_OVERLAY_FPS
@@ -73,16 +84,31 @@ def _run_render_loop(frame_sink: Optional[FrameSink]) -> None:
         loop_started_at = time.perf_counter()
         _active_matrix = _drain_matrix_queue(_active_matrix)
         _active_filter_state = _drain_filter_state_queue(_active_filter_state)
-        corrected_frame = _capture_and_correct(_active_matrix)
-        corrected_frame = _apply_filter_layer(corrected_frame, _active_filter_state)
+        frame_bgr = capture_frame()
+        original_size = (frame_bgr.shape[1], frame_bgr.shape[0])
+        working_frame = _resize_to_scale(frame_bgr, RENDER_SCALE_FACTOR)
+        working_frame = _apply_correction_matrix(working_frame, _active_matrix)
+        working_frame = _apply_filter_layer(working_frame, _active_filter_state)
+        final_frame = _resize_to(working_frame, original_size)
         if frame_sink is not None:
-            frame_sink(corrected_frame)
+            frame_sink(final_frame)
         _sleep_for_remaining_budget(loop_started_at, frame_budget_seconds)
 
 
-# Captura un frame BGR y aplica la matriz activa convirtiendo temporalmente a espacio RGB
-def _capture_and_correct(matrix: Optional[np.ndarray]) -> np.ndarray:
-    frame_bgr = capture_frame()
+# Reduce un frame BGR a una fraccion de su tamano, para abaratar el resto del pipeline
+def _resize_to_scale(frame_bgr: np.ndarray, scale_factor: float) -> np.ndarray:
+    height, width = frame_bgr.shape[:2]
+    target_size = (max(1, int(width * scale_factor)), max(1, int(height * scale_factor)))
+    return cv2.resize(frame_bgr, target_size, interpolation=cv2.INTER_LINEAR)
+
+
+# Reescala un frame BGR al tamano exacto indicado (usado para volver a la resolucion original)
+def _resize_to(frame_bgr: np.ndarray, target_size: Tuple[int, int]) -> np.ndarray:
+    return cv2.resize(frame_bgr, target_size, interpolation=cv2.INTER_LINEAR)
+
+
+# Aplica la matriz de correccion activa convirtiendo temporalmente a espacio RGB
+def _apply_correction_matrix(frame_bgr: np.ndarray, matrix: Optional[np.ndarray]) -> np.ndarray:
     if matrix is None:
         return frame_bgr
     frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)

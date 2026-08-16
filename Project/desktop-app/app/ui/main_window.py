@@ -102,14 +102,18 @@ class MainWindow(ft.Container):
         request_update(self._content_switcher)
         target_view.activate()
 
-    # Alterna el modo de tema y reconstruye el shell con la nueva paleta
+    # Alterna el modo de tema, reconstruye el shell con la nueva paleta y preserva el estado
     def toggle_theme(self) -> None:
+        filters_state = self._views[AppRoute.FILTERS].get_filter_state()
+        settings_state = self._views[AppRoute.SETTINGS].get_preferences()
         self.host_page.theme_mode = get_opposite_theme_mode(self.host_page.theme_mode)
         self.palette = get_palette(self.host_page.theme_mode)
         self.host_page.theme = build_theme(self.palette)
         self.host_page.bgcolor = self.palette.bg_primary
         self.bgcolor = self.palette.bg_primary
         self.content = self._build_shell()
+        self._views[AppRoute.FILTERS].set_filter_state(filters_state)
+        self._views[AppRoute.SETTINGS].set_preferences(settings_state)
         self._refresh_dashboard_summary()
         self.host_page.update()
 

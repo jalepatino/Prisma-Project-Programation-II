@@ -48,6 +48,18 @@ class FiltersView(BaseView):
             "schedule_enabled": bool(self._schedule_switch.value),
         }
 
+    # Aplica un estado de filtros previamente capturado (por ejemplo, antes de un cambio de tema)
+    def set_filter_state(self, state: dict) -> None:
+        self._kelvin_slider.value = state["kelvin"]
+        self._brightness_slider.value = state["brightness_ceiling"]
+        self._contrast_slider.value = state["contrast"]
+        self._kelvin_value.value = str(state["kelvin"]) + " K"
+        self._brightness_value.value = str(state["brightness_ceiling"]) + " %"
+        self._contrast_value.value = str(state["contrast"]) + " %"
+        # Solo refleja el valor visual; el hilo del programador sigue su propio ciclo de vida
+        self._schedule_switch.value = state["schedule_enabled"]
+        request_update(self)
+
     # Restaura todos los controles a su valor neutro
     def reset_filters(self) -> None:
         self._kelvin_slider.value = KELVIN_DEFAULT
