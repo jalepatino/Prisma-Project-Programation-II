@@ -2,6 +2,43 @@
 
 ---
 
+## Fase 7 — GUIDE.md y documentacion final — 2026-08-16
+
+### Archivos creados
+- `GUIDE.md` (raiz del monorepo, `Project/GUIDE.md`) — mapa de directorios
+  completo (Proposito/Funciones/Conexiones por cada uno de los ~35 archivos
+  `.py` significativos de las Fases 0-6), orden de lectura sugerido,
+  glosario en espanol accesible, diagrama ASCII del modelo de hilos, y una
+  seccion final que resume las divergencias reales respecto al spec
+  original con referencia a la entrada del CHANGELOG que las documenta en
+  detalle
+
+### Decisiones de esta fase
+- Antes de escribir una sola linea de `GUIDE.md`, se releyo el CHANGELOG
+  completo (Fases 1-6) y se releyeron los cinco archivos con mas historial
+  de cambios (`main.py`, `main_window.py`, `filters_view.py`,
+  `settings_view.py`, `picker_view.py`) para confirmar su estado final
+  exacto, en vez de documentar de memoria. `GUIDE.md` describe el codigo
+  **tal como quedo construido**, con sus divergencias de API y decisiones
+  de rendimiento reales, no la version idealizada del spec original —
+  siguiendo instruccion explicita para esta fase
+- Correccion de ubicacion: `GUIDE.md` se escribio primero en la raiz del
+  repositorio Git (`ProyectoDaltonismo/GUIDE.md`), pero esa raiz tambien
+  contiene `info-md/` y un `README.md` de plantilla ajenos al monorepo
+  descrito en la Seccion 7 del spec. La raiz real equivalente a
+  `chromaticvision-suite/` es `Project/` (contiene `desktop-app/` y
+  `shared-color-science/` como hermanos directos, igual que el spec). Se
+  movio a `Project/GUIDE.md` antes de confirmar la fase como completa
+
+### Dependencias agregadas
+- ninguna (fase de documentacion, sin cambios de codigo)
+
+### Limitaciones conocidas
+- Ninguna bloqueante; `GUIDE.md` es un documento vivo segun la Seccion 9 del
+  spec y debera actualizarse si se agregan fases futuras
+
+---
+
 ## Fase 6 — Empaquetado PyInstaller y pulido final — 2026-08-16
 
 ### Archivos creados
