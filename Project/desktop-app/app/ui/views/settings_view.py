@@ -228,7 +228,6 @@ class SettingsView(BaseView):
 
     # Abre el dialogo de seleccion, importa el JSON elegido y notifica el cambio de perfil
     async def _handle_import_click(self, event: ft.ControlEvent) -> None:
-        self._register_file_picker()
         files = await self._file_picker.pick_files(
             dialog_title="Importar perfil de vision",
             file_type=ft.FilePickerFileType.CUSTOM,
@@ -258,7 +257,6 @@ class SettingsView(BaseView):
             self._show_toast("No hay un perfil activo para exportar", is_error=True)
             return
         export_bytes = json.dumps(dataclasses.asdict(profile), indent=2).encode("ascii")
-        self._register_file_picker()
         saved_path = await self._file_picker.save_file(
             dialog_title="Exportar perfil de vision",
             file_name="chromatic_vision_profile.json",
@@ -286,9 +284,3 @@ class SettingsView(BaseView):
                 bgcolor=self.palette.bg_elevated,
             )
         )
-
-    # Registra el FilePicker en la superposicion de la pagina la primera vez que se necesita
-    def _register_file_picker(self) -> None:
-        if self._file_picker not in self.page.overlay:
-            self.page.overlay.append(self._file_picker)
-            self.page.update()

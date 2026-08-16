@@ -23,10 +23,11 @@ def handle_toggle_correction(icon: Any, correction_active: bool, renderer: Any) 
     return new_state
 
 
-# Construye la matriz del perfil elegido en el submenu y la publica en la superposicion activa
+# Construye la matriz del perfil elegido, la publica y activa la correccion si estaba en pausa
+# (un solo clic en el submenu alcanza; antes requeria tambien marcar "Correccion de color")
 def handle_switch_profile(
     icon: Any, deficiency_type: str, severity: float, engine: Any, renderer: Any
-) -> None:
+) -> bool:
     global _current_matrix
     profile = ColorVisionProfile(
         schema_version=CURRENT_SCHEMA_VERSION,
@@ -36,7 +37,11 @@ def handle_switch_profile(
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
     _current_matrix = engine.build_matrix_for_profile(profile, "correct")
-    renderer.update_active_matrix(_current_matrix)
+    if renderer.is_render_loop_running():
+        renderer.update_active_matrix(_current_matrix)
+    else:
+        renderer.start_render_loop(_current_matrix)
+    return True
 
 
 # Trae la ventana de Flet al frente, restaurandola si estaba oculta o minimizada

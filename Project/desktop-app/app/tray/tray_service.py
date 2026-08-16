@@ -123,7 +123,7 @@ def _build_quick_switch_submenu() -> pystray.MenuItem:
 # Construye el manejador de clic para un perfil especifico del submenu de cambio rapido
 def _make_switch_profile_handler(deficiency_type: str) -> Callable:
     def handler(icon: pystray.Icon, item: pystray.MenuItem) -> None:
-        tray_menu_actions.handle_switch_profile(
+        correction_active = tray_menu_actions.handle_switch_profile(
             icon,
             deficiency_type,
             QUICK_SWITCH_SEVERITY,
@@ -131,6 +131,7 @@ def _make_switch_profile_handler(deficiency_type: str) -> Callable:
             overlay_renderer,
         )
         _tray_state["active_deficiency_type"] = deficiency_type
+        _tray_state["correction_active"] = correction_active
         icon.update_menu()
 
     return handler

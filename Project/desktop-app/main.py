@@ -18,8 +18,10 @@ from app.config.constants import (
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
 )
+from app.core import overlay_renderer
 from app.tray import tray_menu_actions, tray_service
 from app.ui.main_window import MainWindow
+from app.ui.overlay_window import OverlayWindowController
 from app.ui.theme.design_tokens import get_palette
 from app.ui.theme.theme_builder import build_theme
 
@@ -76,6 +78,16 @@ def start_tray_service(page: ft.Page, main_window: MainWindow) -> None:
     tray_thread.start()
 
 
+# Vincula el controlador de superposicion a overlay_renderer; unico punto de registro,
+# sin importar cual de los tres disparadores (bandeja, cabecera, programador) active el bucle
+def start_overlay_display(page: ft.Page, main_window: MainWindow) -> None:
+    controller = OverlayWindowController(page, main_window)
+    overlay_renderer.set_frame_sink(controller.handle_frame)
+    overlay_renderer.set_lifecycle_callbacks(
+        controller.handle_render_start, controller.handle_render_stop
+    )
+
+
 # Registra o quita la aplicacion del arranque automatico de Windows segun la preferencia
 def apply_startup_preference(launch_on_startup: bool) -> None:
     try:
@@ -99,6 +111,7 @@ async def run_application(page: ft.Page) -> None:
     await initialize_page(page)
     main_window = build_application(page)
     start_tray_service(page, main_window)
+    start_overlay_display(page, main_window)
     apply_startup_preference(bool(config.get("launch_on_startup", False)))
     if config.get("start_minimized", True):
         page.window.visible = False
